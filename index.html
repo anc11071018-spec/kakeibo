@@ -3,105 +3,71 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>家計簿 Pro</title>
+<title>家計簿ログ</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2654/2654272.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #F7F5F0; color: #1A1A1A; font-family: -apple-system, sans-serif; overflow-x: hidden; }
-  input { -webkit-appearance: none; border-radius: 8px; border: 1px solid #E8E4DC; padding: 12px; font-size: 16px; width: 100%; margin-top: 8px; }
+  input { -webkit-appearance: none; border-radius: 12px; border: 1px solid #E8E4DC; padding: 14px; font-size: 16px; width: 100%; margin-top: 8px; }
   .btn { cursor: pointer; border: none; outline: none; }
-  
-  /* スワイプアニメーション用レイアウト */
-  .swipe-container { position: relative; width: 100%; overflow: hidden; background: #C05050; border-bottom: 1px solid #F5F5F5; }
-  .swipe-content { 
-    position: relative; background: #FFF; padding: 15px 20px; display: flex; 
-    justify-content: space-between; align-items: center; z-index: 2;
-    transition: transform 0.3s ease-out; touch-action: pan-y;
-  }
-  .delete-back {
-    position: absolute; right: 0; top: 0; bottom: 0; width: 80px;
-    background: #C05050; color: white; display: flex; align-items: center;
-    justify-content: center; font-size: 14px; font-weight: bold; z-index: 1;
-  }
+  .swipe-container { position: relative; width: 100%; overflow: hidden; background: #FF3B30; border-bottom: 1px solid #F2F2F7; }
+  .swipe-content { position: relative; background: #FFF; padding: 18px 20px; display: flex; justify-content: space-between; align-items: center; z-index: 2; transition: transform 0.3s ease-out; touch-action: pan-y; }
+  .delete-back { position: absolute; right: 0; top: 0; bottom: 0; width: 80px; background: #FF3B30; color: white; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; z-index: 1; }
+  header { padding: 50px 20px 20px; background: #FFF; border-bottom: 1px solid #EEE; }
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useMemo, useEffect, useRef } = React;
+const { useState, useMemo, useEffect } = React;
 
-const CATEGORIES = [
-  { id: "food", label: "食費", icon: "🍱" },
-  { id: "transport", label: "交通費", icon: "🚃" },
-  { id: "shopping", label: "買い物", icon: "🛍" },
-  { id: "other", label: "その他", icon: "📌" },
-];
+const yen = (n) => "¥" + Number(n).toLocaleString("ja-JP");
+// 日本時間の今日の日付（YYYY-MM-DD）を取得する関数
+const getToday = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
-function yen(n) { return "¥" + Number(n).toLocaleString("ja-JP"); }
-function todayStr() { return new Date().toISOString().slice(0, 10); }
-
-// 個別の支出行コンポーネント（スワイプ機能付き）
 function ExpenseItem({ ex, onEdit, onDelete }) {
   const [startX, setStartX] = useState(0);
   const [currentX, setCurrentX] = useState(0);
   const [isSwiped, setIsSwiped] = useState(false);
-
-  const onTouchStart = (e) => {
-    setStartX(e.touches[0].clientX);
-    setIsSwiped(false);
-  };
-
-  const onTouchMove = (e) => {
-    const x = e.touches[0].clientX - startX;
-    if (x < 0) setCurrentX(x); // 左方向のみ
-  };
-
-  const onTouchEnd = () => {
-    if (currentX < -50) {
-      setIsSwiped(true);
-      setCurrentX(-80);
-    } else {
-      setIsSwiped(false);
-      setCurrentX(0);
-    }
-  };
+  const onTouchStart = (e) => setStartX(e.touches[0].clientX);
+  const onTouchMove = (e) => { const x = e.touches[0].clientX - startX; if (x < 0) setCurrentX(x); };
+  const onTouchEnd = () => { if (currentX < -60) { setIsSwiped(true); setCurrentX(-80); } else { setIsSwiped(false); setCurrentX(0); } };
 
   return (
     <div className="swipe-container">
       <div className="delete-back" onClick={() => onDelete(ex.id)}>削除</div>
-      <div 
-        className="swipe-content"
-        style={{ transform: `translateX(${currentX}px)` }}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-        onClick={() => !isSwiped && onEdit(ex)}
-      >
-        <div style={{ display: "flex", gap: "15px", alignItems: "center" }}>
-          <span style={{ fontSize: "24px" }}>{CATEGORIES.find(c => c.id === ex.category)?.icon}</span>
-          <div>
-            <div style={{ fontSize: "15px" }}>{ex.memo || CATEGORIES.find(c => c.id === ex.category)?.label}</div>
-            <div style={{ fontSize: "11px", color: "#999" }}>{isSwiped ? "← 削除を押す" : "タップで編集 / ← スライドで削除"}</div>
-          </div>
+      <div className="swipe-content" style={{ transform: `translateX(${currentX}px)` }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onClick={() => !isSwiped && onEdit(ex)}>
+        <div>
+          <div style={{ fontSize: "16px", fontWeight: "500" }}>{ex.memo || "支出"}</div>
+          <div style={{ fontSize: "11px", color: "#8E8E93" }}>左スライドで削除</div>
         </div>
-        <span style={{ fontSize: "16px", fontWeight: "500" }}>{yen(ex.amount)}</span>
+        <span style={{ fontSize: "17px", fontWeight: "600" }}>{yen(ex.amount)}</span>
       </div>
     </div>
   );
 }
 
 function App() {
-  const [expenses, setExpenses] = useState(() => {
-    const s = localStorage.getItem("kk_exp_v6");
-    return s ? JSON.parse(s) : [];
-  });
+  const [expenses, setExpenses] = useState(() => JSON.parse(localStorage.getItem("kk_v8") || "[]"));
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ amount: "", category: "food", memo: "", date: todayStr() });
+  const [form, setForm] = useState({ amount: "", memo: "", date: getToday() });
   const [editId, setEditId] = useState(null);
 
-  useEffect(() => { localStorage.setItem("kk_exp_v6", JSON.stringify(expenses)); }, [expenses]);
+  useEffect(() => { localStorage.setItem("kk_v8", JSON.stringify(expenses)); }, [expenses]);
+  
+  // フォームを開くときに日付を「今日」にリセットする
+  const openNewForm = () => {
+    setEditId(null);
+    setForm({ amount: "", memo: "", date: getToday() });
+    setShowForm(true);
+  };
 
   const dailyMap = useMemo(() => {
     const map = {};
@@ -113,73 +79,45 @@ function App() {
 
   const exportToCalendar = (date, total) => {
     const cleanDate = date.replace(/-/g, "");
-    const icsContent = [
-      "BEGIN:VCALENDAR",
-      "VERSION:2.0",
-      "BEGIN:VEVENT",
-      `DTSTART;VALUE=DATE:${cleanDate}`,
-      `DTEND;VALUE=DATE:${cleanDate}`,
-      `SUMMARY:${yen(total)}`, // 金額のみ
-      "DESCRIPTION:家計簿より同期",
-      "END:VEVENT",
-      "END:VCALENDAR"
-    ].join("\r\n");
-    window.location.href = "data:text/calendar;charset=utf8," + encodeURIComponent(icsContent);
-  };
-
-  const submitForm = (e) => {
-    e.preventDefault();
-    if (!form.amount) return;
-    const newEntry = { id: editId || Date.now(), ...form, amount: Number(form.amount) };
-    setExpenses(p => editId ? p.map(ex => ex.id === editId ? newEntry : ex) : [newEntry, ...p]);
-    setShowForm(false);
-    setEditId(null);
-  };
-
-  const deleteEntry = (id) => {
-    setExpenses(p => p.filter(ex => ex.id !== id));
+    const ics = ["BEGIN:VCALENDAR","VERSION:2.0","BEGIN:VEVENT",`DTSTART;VALUE=DATE:${cleanDate}`,`DTEND;VALUE=DATE:${cleanDate}`,`SUMMARY:${yen(total)}`,"END:VEVENT","END:VCALENDAR"].join("\r\n");
+    window.location.href = "data:text/calendar;charset=utf8," + encodeURIComponent(ics);
   };
 
   return (
-    <div style={{ maxWidth: 430, margin: "0 auto", paddingBottom: 100 }}>
-      <header style={{ padding: "30px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1 style={{ fontSize: "22px" }}>家計簿ログ</h1>
-        <button onClick={() => { setEditId(null); setForm({ amount: "", category: "food", memo: "", date: todayStr() }); setShowForm(true); }} className="btn" style={{ background: "#1A1A1A", color: "#FFF", width: 44, height: 44, borderRadius: "50%", fontSize: "24px" }}>+</button>
+    <div style={{ maxWidth: 430, margin: "0 auto", paddingBottom: 120 }}>
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h1 style={{ fontSize: "24px" }}>家計簿ログ</h1>
+        <button onClick={openNewForm} className="btn" style={{ background: "#007AFF", color: "#FFF", width: 44, height: 44, borderRadius: "50%", fontSize: "28px" }}>+</button>
       </header>
 
       {sortedDates.map(date => {
         const total = dailyMap[date].reduce((s,e) => s + e.amount, 0);
         return (
-          <div key={date} style={{ marginBottom: 12 }}>
-            <div style={{ padding: "10px 20px", background: "#F0EDE6", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "13px", fontWeight: "bold" }}>{date}</span>
+          <div key={date} style={{ marginBottom: 8 }}>
+            <div style={{ padding: "12px 20px", background: "#F2F2F7", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: "13px", fontWeight: "600", color: "#8E8E93" }}>{date}</span>
               <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <span style={{ fontSize: "14px", fontWeight: "bold" }}>{yen(total)}</span>
-                <button onClick={() => exportToCalendar(date, total)} className="btn" style={{ background: "#1A1A1A", color: "#FFF", padding: "6px 12px", borderRadius: "6px", fontSize: "11px" }}>カレンダーに追加</button>
+                <span style={{ fontSize: "15px", fontWeight: "bold" }}>{yen(total)}</span>
+                <button onClick={() => exportToCalendar(date, total)} className="btn" style={{ background: "#FFF", border: "1px solid #D1D1D6", padding: "6px 12px", borderRadius: "8px", fontSize: "12px" }}>カレンダー</button>
               </div>
             </div>
             {dailyMap[date].map(ex => (
-              <ExpenseItem 
-                key={ex.id} 
-                ex={ex} 
-                onEdit={(item) => { setForm({ amount: String(item.amount), category: item.category, memo: item.memo, date: item.date }); setEditId(item.id); setShowForm(true); }}
-                onDelete={deleteEntry}
-              />
+              <ExpenseItem key={ex.id} ex={ex} onEdit={(item) => { setForm(item); setEditId(item.id); setShowForm(true); }} onDelete={(id) => setExpenses(p => p.filter(e => e.id !== id))} />
             ))}
           </div>
         );
       })}
 
       {showForm && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "flex-end", zIndex: 100 }}>
-          <div style={{ background: "#FFF", width: "100%", padding: "30px", borderRadius: "20px 20px 0 0" }}>
-            <form onSubmit={submitForm}>
-              <h3 style={{ marginBottom: "20px" }}>入力・編集</h3>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "flex-end", zIndex: 100 }}>
+          <div style={{ background: "#FFF", width: "100%", padding: "30px 25px 50px", borderRadius: "20px 20px 0 0" }}>
+            <form onSubmit={(e) => { e.preventDefault(); if(!form.amount) return; const entry = { id: editId || Date.now(), ...form, amount: Number(form.amount) }; setExpenses(p => editId ? p.map(x => x.id === editId ? entry : x) : [entry, ...p]); setShowForm(false); }}>
+              <h3 style={{ marginBottom: "20px" }}>{editId ? "編集" : "新規入力"}</h3>
               <input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
-              <input type="number" placeholder="金額" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} style={{marginTop: "15px"}} />
-              <input type="text" placeholder="メモ" value={form.memo} onChange={e => setForm({...form, memo: e.target.value})} style={{marginTop: "15px"}} />
-              <button type="submit" style={{ width: "100%", marginTop: "25px", padding: "16px", background: "#1A1A1A", color: "#FFF", borderRadius: "12px", fontSize: "16px", fontWeight: "bold" }} className="btn">保存する</button>
-              <button type="button" onClick={() => setShowForm(false)} style={{ width: "100%", marginTop: "10px", color: "#999", background: "none" }} className="btn">キャンセル</button>
+              <input type="number" inputMode="numeric" placeholder="金額" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} style={{marginTop: "12px"}} />
+              <input type="text" placeholder="メモ" value={form.memo} onChange={e => setForm({...form, memo: e.target.value})} style={{marginTop: "12px"}} />
+              <button type="submit" style={{ width: "100%", marginTop: "25px", padding: "18px", background: "#007AFF", color: "#FFF", borderRadius: "14px", fontSize: "17px", fontWeight: "bold" }}>保存する</button>
+              <button type="button" onClick={() => setShowForm(false)} style={{ width: "100%", marginTop: "12px", color: "#8E8E93", background: "none" }}>キャンセル</button>
             </form>
           </div>
         </div>
