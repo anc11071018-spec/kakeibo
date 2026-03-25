@@ -12,12 +12,15 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #F7F5F0; color: #1A1A1A; font-family: -apple-system, sans-serif; overflow-x: hidden; }
-  input { -webkit-appearance: none; border-radius: 12px; border: 1px solid #E8E4DC; padding: 14px; font-size: 16px; width: 100%; margin-top: 8px; }
+  input { -webkit-appearance: none; border-radius: 12px; border: 1px solid #E8E4DC; padding: 14px; font-size: 16px; width: 100%; margin-top: 8px; outline: none; }
   .btn { cursor: pointer; border: none; outline: none; }
-  .swipe-container { position: relative; width: 100%; overflow: hidden; background: #FF3B30; border-bottom: 1px solid #F2F2F7; }
-  .swipe-content { position: relative; background: #FFF; padding: 18px 20px; display: flex; justify-content: space-between; align-items: center; z-index: 2; transition: transform 0.3s ease-out; touch-action: pan-y; }
+  .swipe-container { position: relative; width: 100%; overflow: hidden; background: #FF3B30; }
+  .swipe-content { position: relative; background: #FFF; padding: 18px 20px; display: flex; justify-content: space-between; align-items: center; z-index: 2; transition: transform 0.3s ease-out; touch-action: pan-y; border-bottom: 1px solid #F2F2F7; }
   .delete-back { position: absolute; right: 0; top: 0; bottom: 0; width: 80px; background: #FF3B30; color: white; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; z-index: 1; }
-  header { padding: 50px 20px 20px; background: #FFF; border-bottom: 1px solid #EEE; }
+  header { padding: 50px 20px 20px; background: #FFF; border-bottom: 1px solid #EEE; position: sticky; top: 0; z-index: 10; }
+  .date-bar { padding: 12px 20px; background: #F2F2F7; display: flex; justify-content: space-between; align-items: center; cursor: pointer; position: sticky; top: 95px; z-index: 5; }
+  .chevron { transition: transform 0.2s; font-size: 10px; color: #8E8E93; }
+  .collapsed .chevron { transform: rotate(-90deg); }
 </style>
 </head>
 <body>
@@ -26,7 +29,6 @@
 const { useState, useMemo, useEffect } = React;
 
 const yen = (n) => "¥" + Number(n).toLocaleString("ja-JP");
-// 日本時間の今日の日付（YYYY-MM-DD）を取得する関数
 const getToday = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -45,8 +47,8 @@ function ExpenseItem({ ex, onEdit, onDelete }) {
       <div className="delete-back" onClick={() => onDelete(ex.id)}>削除</div>
       <div className="swipe-content" style={{ transform: `translateX(${currentX}px)` }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onClick={() => !isSwiped && onEdit(ex)}>
         <div>
-          <div style={{ fontSize: "16px", fontWeight: "500" }}>{ex.memo || "支出"}</div>
-          <div style={{ fontSize: "11px", color: "#8E8E93" }}>左スライドで削除</div>
+          <div style={{ fontSize: "16px", fontWeight: "500" }}>{ex.memo || "支出記録"}</div>
+          <div style={{ fontSize: "11px", color: "#8E8E93" }}>スライドで削除</div>
         </div>
         <span style={{ fontSize: "17px", fontWeight: "600" }}>{yen(ex.amount)}</span>
       </div>
@@ -55,14 +57,15 @@ function ExpenseItem({ ex, onEdit, onDelete }) {
 }
 
 function App() {
-  const [expenses, setExpenses] = useState(() => JSON.parse(localStorage.getItem("kk_v8") || "[]"));
+  // 永続化ストレージ (kk_v9)
+  const [expenses, setExpenses] = useState(() => JSON.parse(localStorage.getItem("kk_v9") || "[]"));
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ amount: "", memo: "", date: getToday() });
   const [editId, setEditId] = useState(null);
+  const [collapsedDates, setCollapsedDates] = useState({});
 
-  useEffect(() => { localStorage.setItem("kk_v8", JSON.stringify(expenses)); }, [expenses]);
+  useEffect(() => { localStorage.setItem("kk_v9", JSON.stringify(expenses)); }, [expenses]);
   
-  // フォームを開くときに日付を「今日」にリセットする
   const openNewForm = () => {
     setEditId(null);
     setForm({ amount: "", memo: "", date: getToday() });
@@ -77,7 +80,12 @@ function App() {
 
   const sortedDates = useMemo(() => Object.keys(dailyMap).sort((a,b) => b.localeCompare(a)), [dailyMap]);
 
-  const exportToCalendar = (date, total) => {
+  const toggleCollapse = (date) => {
+    setCollapsedDates(prev => ({ ...prev, [date]: !prev[date] }));
+  };
+
+  const exportToCalendar = (e, date, total) => {
+    e.stopPropagation(); // 最小化イベントを防ぐ
     const cleanDate = date.replace(/-/g, "");
     const ics = ["BEGIN:VCALENDAR","VERSION:2.0","BEGIN:VEVENT",`DTSTART;VALUE=DATE:${cleanDate}`,`DTEND;VALUE=DATE:${cleanDate}`,`SUMMARY:${yen(total)}`,"END:VEVENT","END:VCALENDAR"].join("\r\n");
     window.location.href = "data:text/calendar;charset=utf8," + encodeURIComponent(ics);
@@ -85,23 +93,28 @@ function App() {
 
   return (
     <div style={{ maxWidth: 430, margin: "0 auto", paddingBottom: 120 }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1 style={{ fontSize: "24px" }}>家計簿ログ</h1>
-        <button onClick={openNewForm} className="btn" style={{ background: "#007AFF", color: "#FFF", width: 44, height: 44, borderRadius: "50%", fontSize: "28px" }}>+</button>
+      <header>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h1 style={{ fontSize: "24px" }}>家計簿ログ</h1>
+          <button onClick={openNewForm} className="btn" style={{ background: "#007AFF", color: "#FFF", width: 44, height: 44, borderRadius: "50%", fontSize: "28px" }}>+</button>
+        </div>
       </header>
 
       {sortedDates.map(date => {
         const total = dailyMap[date].reduce((s,e) => s + e.amount, 0);
+        const isCollapsed = collapsedDates[date];
         return (
-          <div key={date} style={{ marginBottom: 8 }}>
-            <div style={{ padding: "12px 20px", background: "#F2F2F7", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "13px", fontWeight: "600", color: "#8E8E93" }}>{date}</span>
+          <div key={date} style={{ marginBottom: 2 }}>
+            <div className={`date-bar ${isCollapsed ? 'collapsed' : ''}`} onClick={() => toggleCollapse(date)}>
+              <span style={{ fontSize: "13px", fontWeight: "600", color: "#8E8E93" }}>
+                <span className="chevron">▼</span> {date}
+              </span>
               <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                 <span style={{ fontSize: "15px", fontWeight: "bold" }}>{yen(total)}</span>
-                <button onClick={() => exportToCalendar(date, total)} className="btn" style={{ background: "#FFF", border: "1px solid #D1D1D6", padding: "6px 12px", borderRadius: "8px", fontSize: "12px" }}>カレンダー</button>
+                <button onClick={(e) => exportToCalendar(e, date, total)} className="btn" style={{ background: "#FFF", border: "1px solid #D1D1D6", padding: "6px 12px", borderRadius: "8px", fontSize: "11px" }}>同期</button>
               </div>
             </div>
-            {dailyMap[date].map(ex => (
+            {!isCollapsed && dailyMap[date].map(ex => (
               <ExpenseItem key={ex.id} ex={ex} onEdit={(item) => { setForm(item); setEditId(item.id); setShowForm(true); }} onDelete={(id) => setExpenses(p => p.filter(e => e.id !== id))} />
             ))}
           </div>
@@ -116,8 +129,8 @@ function App() {
               <input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
               <input type="number" inputMode="numeric" placeholder="金額" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} style={{marginTop: "12px"}} />
               <input type="text" placeholder="メモ" value={form.memo} onChange={e => setForm({...form, memo: e.target.value})} style={{marginTop: "12px"}} />
-              <button type="submit" style={{ width: "100%", marginTop: "25px", padding: "18px", background: "#007AFF", color: "#FFF", borderRadius: "14px", fontSize: "17px", fontWeight: "bold" }}>保存する</button>
-              <button type="button" onClick={() => setShowForm(false)} style={{ width: "100%", marginTop: "12px", color: "#8E8E93", background: "none" }}>キャンセル</button>
+              <button type="submit" style={{ width: "100%", marginTop: "25px", padding: "18px", background: "#007AFF", color: "#FFF", borderRadius: "14px", fontSize: "17px", fontWeight: "bold" }} className="btn">保存する</button>
+              <button type="button" onClick={() => setShowForm(false)} style={{ width: "100%", marginTop: "12px", color: "#8E8E93", background: "none" }} className="btn">キャンセル</button>
             </form>
           </div>
         </div>
