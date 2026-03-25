@@ -9,17 +9,28 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #F7F5F0; color: #1A1A1A; font-family: -apple-system, sans-serif; }
+  body { background: #F7F5F0; color: #1A1A1A; font-family: -apple-system, sans-serif; overflow-x: hidden; }
   input { -webkit-appearance: none; border-radius: 8px; border: 1px solid #E8E4DC; padding: 12px; font-size: 16px; width: 100%; margin-top: 8px; }
   .btn { cursor: pointer; border: none; outline: none; }
-  .btn:active { opacity: 0.5; }
-  .list-item { padding: 15px 20px; border-bottom: 1px solid #F5F5F5; display: flex; justify-content: space-between; align-items: center; background: #FFF; }
+  
+  /* スワイプアニメーション用レイアウト */
+  .swipe-container { position: relative; width: 100%; overflow: hidden; background: #C05050; border-bottom: 1px solid #F5F5F5; }
+  .swipe-content { 
+    position: relative; background: #FFF; padding: 15px 20px; display: flex; 
+    justify-content: space-between; align-items: center; z-index: 2;
+    transition: transform 0.3s ease-out; touch-action: pan-y;
+  }
+  .delete-back {
+    position: absolute; right: 0; top: 0; bottom: 0; width: 80px;
+    background: #C05050; color: white; display: flex; align-items: center;
+    justify-content: center; font-size: 14px; font-weight: bold; z-index: 1;
+  }
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useMemo, useEffect } = React;
+const { useState, useMemo, useEffect, useRef } = React;
 
 const CATEGORIES = [
   { id: "food", label: "食費", icon: "🍱" },
@@ -31,16 +42,66 @@ const CATEGORIES = [
 function yen(n) { return "¥" + Number(n).toLocaleString("ja-JP"); }
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 
+// 個別の支出行コンポーネント（スワイプ機能付き）
+function ExpenseItem({ ex, onEdit, onDelete }) {
+  const [startX, setStartX] = useState(0);
+  const [currentX, setCurrentX] = useState(0);
+  const [isSwiped, setIsSwiped] = useState(false);
+
+  const onTouchStart = (e) => {
+    setStartX(e.touches[0].clientX);
+    setIsSwiped(false);
+  };
+
+  const onTouchMove = (e) => {
+    const x = e.touches[0].clientX - startX;
+    if (x < 0) setCurrentX(x); // 左方向のみ
+  };
+
+  const onTouchEnd = () => {
+    if (currentX < -50) {
+      setIsSwiped(true);
+      setCurrentX(-80);
+    } else {
+      setIsSwiped(false);
+      setCurrentX(0);
+    }
+  };
+
+  return (
+    <div className="swipe-container">
+      <div className="delete-back" onClick={() => onDelete(ex.id)}>削除</div>
+      <div 
+        className="swipe-content"
+        style={{ transform: `translateX(${currentX}px)` }}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onClick={() => !isSwiped && onEdit(ex)}
+      >
+        <div style={{ display: "flex", gap: "15px", alignItems: "center" }}>
+          <span style={{ fontSize: "24px" }}>{CATEGORIES.find(c => c.id === ex.category)?.icon}</span>
+          <div>
+            <div style={{ fontSize: "15px" }}>{ex.memo || CATEGORIES.find(c => c.id === ex.category)?.label}</div>
+            <div style={{ fontSize: "11px", color: "#999" }}>{isSwiped ? "← 削除を押す" : "タップで編集 / ← スライドで削除"}</div>
+          </div>
+        </div>
+        <span style={{ fontSize: "16px", fontWeight: "500" }}>{yen(ex.amount)}</span>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [expenses, setExpenses] = useState(() => {
-    const s = localStorage.getItem("kk_exp_v5");
+    const s = localStorage.getItem("kk_exp_v6");
     return s ? JSON.parse(s) : [];
   });
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ amount: "", category: "food", memo: "", date: todayStr() });
   const [editId, setEditId] = useState(null);
 
-  useEffect(() => { localStorage.setItem("kk_exp_v5", JSON.stringify(expenses)); }, [expenses]);
+  useEffect(() => { localStorage.setItem("kk_exp_v6", JSON.stringify(expenses)); }, [expenses]);
 
   const dailyMap = useMemo(() => {
     const map = {};
@@ -50,50 +111,33 @@ function App() {
 
   const sortedDates = useMemo(() => Object.keys(dailyMap).sort((a,b) => b.localeCompare(a)), [dailyMap]);
 
-  // カレンダー連携の修正：タイトルを「金額のみ」に徹底
   const exportToCalendar = (date, total) => {
     const cleanDate = date.replace(/-/g, "");
-    const amountOnly = yen(total); // 「¥568」の形式
-    
-    const icsLines = [
+    const icsContent = [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
-      "PRODID:-//MyKakeibo//JP",
       "BEGIN:VEVENT",
       `DTSTART;VALUE=DATE:${cleanDate}`,
       `DTEND;VALUE=DATE:${cleanDate}`,
-      `SUMMARY:${amountOnly}`, // 「支出合計」という文字を完全に削除
-      "DESCRIPTION:家計簿アプリより同期",
-      "TRANSP:TRANSPARENT",
+      `SUMMARY:${yen(total)}`, // 金額のみ
+      "DESCRIPTION:家計簿より同期",
       "END:VEVENT",
       "END:VCALENDAR"
-    ];
-    
-    const icsContent = icsLines.join("\r\n");
-    const blob = new Blob([icsContent], { type: "text/calendar;charset=utf-8" });
-    const url = window.URL.createObjectURL(blob);
-    
-    // iPhoneのSafariで直接イベント追加画面を開かせるための処理
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", "event.ics");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
+    ].join("\r\n");
+    window.location.href = "data:text/calendar;charset=utf8," + encodeURIComponent(icsContent);
   };
 
   const submitForm = (e) => {
     e.preventDefault();
     if (!form.amount) return;
     const newEntry = { id: editId || Date.now(), ...form, amount: Number(form.amount) };
-    if (editId) {
-      setExpenses(p => p.map(ex => ex.id === editId ? newEntry : ex));
-    } else {
-      setExpenses(p => [newEntry, ...p]);
-    }
+    setExpenses(p => editId ? p.map(ex => ex.id === editId ? newEntry : ex) : [newEntry, ...p]);
     setShowForm(false);
     setEditId(null);
+  };
+
+  const deleteEntry = (id) => {
+    setExpenses(p => p.filter(ex => ex.id !== id));
   };
 
   return (
@@ -115,16 +159,12 @@ function App() {
               </div>
             </div>
             {dailyMap[date].map(ex => (
-              <div key={ex.id} onClick={() => { setForm({ amount: String(ex.amount), category: ex.category, memo: ex.memo, date: ex.date }); setEditId(ex.id); setShowForm(true); }} className="list-item">
-                <div style={{ display: "flex", gap: "15px", alignItems: "center" }}>
-                  <span style={{ fontSize: "24px" }}>{CATEGORIES.find(c => c.id === ex.category)?.icon}</span>
-                  <div>
-                    <div style={{ fontSize: "15px" }}>{ex.memo || CATEGORIES.find(c => c.id === ex.category)?.label}</div>
-                    <div style={{ fontSize: "11px", color: "#999" }}>タップで編集</div>
-                  </div>
-                </div>
-                <span style={{ fontSize: "16px", fontWeight: "500" }}>{yen(ex.amount)}</span>
-              </div>
+              <ExpenseItem 
+                key={ex.id} 
+                ex={ex} 
+                onEdit={(item) => { setForm({ amount: String(item.amount), category: item.category, memo: item.memo, date: item.date }); setEditId(item.id); setShowForm(true); }}
+                onDelete={deleteEntry}
+              />
             ))}
           </div>
         );
@@ -139,7 +179,6 @@ function App() {
               <input type="number" placeholder="金額" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} style={{marginTop: "15px"}} />
               <input type="text" placeholder="メモ" value={form.memo} onChange={e => setForm({...form, memo: e.target.value})} style={{marginTop: "15px"}} />
               <button type="submit" style={{ width: "100%", marginTop: "25px", padding: "16px", background: "#1A1A1A", color: "#FFF", borderRadius: "12px", fontSize: "16px", fontWeight: "bold" }} className="btn">保存する</button>
-              {editId && <button type="button" onClick={() => { if(confirm("この記録を削除しますか？")){ setExpenses(p => p.filter(ex => ex.id !== editId)); setShowForm(false); } }} style={{ width: "100%", marginTop: "10px", color: "#C05050", background: "none" }} className="btn">削除する</button>}
               <button type="button" onClick={() => setShowForm(false)} style={{ width: "100%", marginTop: "10px", color: "#999", background: "none" }} className="btn">キャンセル</button>
             </form>
           </div>
