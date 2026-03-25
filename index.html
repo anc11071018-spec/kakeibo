@@ -33,14 +33,14 @@ function todayStr() { return new Date().toISOString().slice(0, 10); }
 
 function App() {
   const [expenses, setExpenses] = useState(() => {
-    const s = localStorage.getItem("kk_exp_v4");
+    const s = localStorage.getItem("kk_exp_v5");
     return s ? JSON.parse(s) : [];
   });
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ amount: "", category: "food", memo: "", date: todayStr() });
   const [editId, setEditId] = useState(null);
 
-  useEffect(() => { localStorage.setItem("kk_exp_v4", JSON.stringify(expenses)); }, [expenses]);
+  useEffect(() => { localStorage.setItem("kk_exp_v5", JSON.stringify(expenses)); }, [expenses]);
 
   const dailyMap = useMemo(() => {
     const map = {};
@@ -50,24 +50,37 @@ function App() {
 
   const sortedDates = useMemo(() => Object.keys(dailyMap).sort((a,b) => b.localeCompare(a)), [dailyMap]);
 
-  // iPhoneカレンダー連携の修正（タイトルから文字を削除）
+  // カレンダー連携の修正：タイトルを「金額のみ」に徹底
   const exportToCalendar = (date, total) => {
     const cleanDate = date.replace(/-/g, "");
-    const ics = [
+    const amountOnly = yen(total); // 「¥568」の形式
+    
+    const icsLines = [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
+      "PRODID:-//MyKakeibo//JP",
       "BEGIN:VEVENT",
       `DTSTART;VALUE=DATE:${cleanDate}`,
       `DTEND;VALUE=DATE:${cleanDate}`,
-      `SUMMARY:${yen(total)}`, // ここを金額のみに修正
+      `SUMMARY:${amountOnly}`, // 「支出合計」という文字を完全に削除
       "DESCRIPTION:家計簿アプリより同期",
+      "TRANSP:TRANSPARENT",
       "END:VEVENT",
       "END:VCALENDAR"
-    ].join("\n");
+    ];
     
-    // iPhoneのSafariで直接「イベント追加」を開かせるための設定
-    const uri = "data:text/calendar;charset=utf8," + encodeURIComponent(ics);
-    window.location.href = uri;
+    const icsContent = icsLines.join("\r\n");
+    const blob = new Blob([icsContent], { type: "text/calendar;charset=utf-8" });
+    const url = window.URL.createObjectURL(blob);
+    
+    // iPhoneのSafariで直接イベント追加画面を開かせるための処理
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "event.ics");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
   };
 
   const submitForm = (e) => {
@@ -107,7 +120,7 @@ function App() {
                   <span style={{ fontSize: "24px" }}>{CATEGORIES.find(c => c.id === ex.category)?.icon}</span>
                   <div>
                     <div style={{ fontSize: "15px" }}>{ex.memo || CATEGORIES.find(c => c.id === ex.category)?.label}</div>
-                    <div style={{ fontSize: "11px", color: "#999" }}>修正</div>
+                    <div style={{ fontSize: "11px", color: "#999" }}>タップで編集</div>
                   </div>
                 </div>
                 <span style={{ fontSize: "16px", fontWeight: "500" }}>{yen(ex.amount)}</span>
@@ -126,7 +139,7 @@ function App() {
               <input type="number" placeholder="金額" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} style={{marginTop: "15px"}} />
               <input type="text" placeholder="メモ" value={form.memo} onChange={e => setForm({...form, memo: e.target.value})} style={{marginTop: "15px"}} />
               <button type="submit" style={{ width: "100%", marginTop: "25px", padding: "16px", background: "#1A1A1A", color: "#FFF", borderRadius: "12px", fontSize: "16px", fontWeight: "bold" }} className="btn">保存する</button>
-              {editId && <button type="button" onClick={() => { if(confirm("消去しますか？")){ setExpenses(p => p.filter(ex => ex.id !== editId)); setShowForm(false); } }} style={{ width: "100%", marginTop: "10px", color: "#C05050", background: "none" }} className="btn">削除する</button>}
+              {editId && <button type="button" onClick={() => { if(confirm("この記録を削除しますか？")){ setExpenses(p => p.filter(ex => ex.id !== editId)); setShowForm(false); } }} style={{ width: "100%", marginTop: "10px", color: "#C05050", background: "none" }} className="btn">削除する</button>}
               <button type="button" onClick={() => setShowForm(false)} style={{ width: "100%", marginTop: "10px", color: "#999", background: "none" }} className="btn">キャンセル</button>
             </form>
           </div>
