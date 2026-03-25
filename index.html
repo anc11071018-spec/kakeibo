@@ -9,11 +9,11 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #F7F5F0; color: #1A1A1A; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-tap-highlight-color: transparent; }
+  body { background: #F7F5F0; color: #1A1A1A; font-family: -apple-system, sans-serif; }
   input { -webkit-appearance: none; border-radius: 8px; border: 1px solid #E8E4DC; padding: 12px; font-size: 16px; width: 100%; margin-top: 8px; }
-  .btn { cursor: pointer; transition: opacity 0.2s; border: none; }
+  .btn { cursor: pointer; border: none; outline: none; }
   .btn:active { opacity: 0.5; }
-  .list-item { padding: 12px 20px; border-bottom: 1px solid #F5F5F5; display: flex; justify-content: space-between; align-items: center; background: #FFF; }
+  .list-item { padding: 15px 20px; border-bottom: 1px solid #F5F5F5; display: flex; justify-content: space-between; align-items: center; background: #FFF; }
 </style>
 </head>
 <body>
@@ -33,14 +33,14 @@ function todayStr() { return new Date().toISOString().slice(0, 10); }
 
 function App() {
   const [expenses, setExpenses] = useState(() => {
-    const s = localStorage.getItem("kk_exp_v2");
+    const s = localStorage.getItem("kk_exp_final");
     return s ? JSON.parse(s) : [];
   });
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ amount: "", category: "food", memo: "", date: todayStr() });
   const [editId, setEditId] = useState(null);
 
-  useEffect(() => { localStorage.setItem("kk_exp_v2", JSON.stringify(expenses)); }, [expenses]);
+  useEffect(() => { localStorage.setItem("kk_exp_final", JSON.stringify(expenses)); }, [expenses]);
 
   const dailyMap = useMemo(() => {
     const map = {};
@@ -50,7 +50,7 @@ function App() {
 
   const sortedDates = useMemo(() => Object.keys(dailyMap).sort((a,b) => b.localeCompare(a)), [dailyMap]);
 
-  // カレンダー連携：Data URL方式（iPhoneのSafariで開きやすい形式）
+  // iPhoneでカレンダーアプリを直接起動させるためのリンク生成
   const exportToCalendar = (date, total) => {
     const cleanDate = date.replace(/-/g, "");
     const ics = [
@@ -58,27 +58,22 @@ function App() {
       "VERSION:2.0",
       "BEGIN:VEVENT",
       `DTSTART;VALUE=DATE:${cleanDate}`,
+      `DTEND;VALUE=DATE:${cleanDate}`,
       `SUMMARY:支出合計: ${yen(total)}`,
-      "DESCRIPTION:家計簿から同期",
+      "DESCRIPTION:家計簿アプリより同期",
       "END:VEVENT",
       "END:VCALENDAR"
     ].join("\n");
     
-    const uri = "data:text/calendar;charset=utf8," + encodeURIComponent(ics);
-    window.location.href = uri;
-  };
-
-  const openEdit = (ex) => {
-    setForm({ amount: String(ex.amount), category: ex.category, memo: ex.memo, date: ex.date });
-    setEditId(ex.id);
-    setShowForm(true);
+    // データスキームを text/calendar に固定し、iPhoneにカレンダーデータだと認識させる
+    const url = "data:text/calendar;charset=utf8," + encodeURIComponent(ics);
+    window.location.assign(url);
   };
 
   const submitForm = (e) => {
     e.preventDefault();
     if (!form.amount) return;
     const newEntry = { id: editId || Date.now(), ...form, amount: Number(form.amount) };
-    
     if (editId) {
       setExpenses(p => p.map(ex => ex.id === editId ? newEntry : ex));
     } else {
@@ -88,41 +83,34 @@ function App() {
     setEditId(null);
   };
 
-  const deleteEntry = (id) => {
-    if(confirm("この記録を削除しますか？")) {
-      setExpenses(p => p.filter(ex => ex.id !== id));
-      setShowForm(false);
-    }
-  };
-
   return (
     <div style={{ maxWidth: 430, margin: "0 auto", paddingBottom: 100 }}>
       <header style={{ padding: "30px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1 style={{ fontSize: "22px" }}>家計簿ログ</h1>
-        <button onClick={() => { setEditId(null); setForm({ amount: "", category: "food", memo: "", date: todayStr() }); setShowForm(true); }} className="btn" style={{ background: "#1A1A1A", color: "#FFF", width: 40, height: 40, borderRadius: "50%", fontSize: "24px" }}>+</button>
+        <button onClick={() => { setEditId(null); setForm({ amount: "", category: "food", memo: "", date: todayStr() }); setShowForm(true); }} className="btn" style={{ background: "#1A1A1A", color: "#FFF", width: 44, height: 44, borderRadius: "50%", fontSize: "24px" }}>+</button>
       </header>
 
       {sortedDates.map(date => {
         const total = dailyMap[date].reduce((s,e) => s + e.amount, 0);
         return (
-          <div key={date} style={{ marginBottom: 10 }}>
-            <div style={{ padding: "8px 20px", background: "#F0EDE6", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "13px" }}>
-              <span>{date}</span>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <b>{yen(total)}</b>
-                <button onClick={() => exportToCalendar(date, total)} className="btn" style={{ background: "#FFF", border: "1px solid #CCC", padding: "2px 8px", borderRadius: "4px", fontSize: "11px" }}>カレンダーに追加</button>
+          <div key={date} style={{ marginBottom: 12 }}>
+            <div style={{ padding: "10px 20px", background: "#F0EDE6", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: "13px", fontWeight: "bold" }}>{date}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <span style={{ fontSize: "14px", fontWeight: "bold" }}>{yen(total)}</span>
+                <button onClick={() => exportToCalendar(date, total)} className="btn" style={{ background: "#1A1A1A", color: "#FFF", padding: "6px 12px", borderRadius: "6px", fontSize: "11px" }}>カレンダーに追加</button>
               </div>
             </div>
             {dailyMap[date].map(ex => (
-              <div key={ex.id} onClick={() => openEdit(ex)} className="list-item">
-                <div style={{ display: "flex", gap: "12px" }}>
-                  <span>{CATEGORIES.find(c => c.id === ex.category)?.icon}</span>
+              <div key={ex.id} onClick={() => { setForm({ amount: String(ex.amount), category: ex.category, memo: ex.memo, date: ex.date }); setEditId(ex.id); setShowForm(true); }} className="list-item">
+                <div style={{ display: "flex", gap: "15px", alignItems: "center" }}>
+                  <span style={{ fontSize: "24px" }}>{CATEGORIES.find(c => c.id === ex.category)?.icon}</span>
                   <div>
-                    <div style={{ fontSize: "14px" }}>{ex.memo || "無題"}</div>
-                    <div style={{ fontSize: "11px", color: "#AAA" }}>タップで編集</div>
+                    <div style={{ fontSize: "15px" }}>{ex.memo || CATEGORIES.find(c => c.id === ex.category)?.label}</div>
+                    <div style={{ fontSize: "11px", color: "#999" }}>修正</div>
                   </div>
                 </div>
-                <span style={{ fontWeight: "500" }}>{yen(ex.amount)}</span>
+                <span style={{ fontSize: "16px", fontWeight: "500" }}>{yen(ex.amount)}</span>
               </div>
             ))}
           </div>
@@ -130,26 +118,15 @@ function App() {
       })}
 
       {showForm && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "flex-end", zIndex: 100 }}>
-          <div style={{ background: "#FFF", width: "100%", padding: "25px", borderRadius: "20px 20px 0 0" }}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "flex-end", zIndex: 100 }}>
+          <div style={{ background: "#FFF", width: "100%", padding: "30px", borderRadius: "20px 20px 0 0" }}>
             <form onSubmit={submitForm}>
-              <h3 style={{ marginBottom: "15px", fontSize: "16px" }}>{editId ? "記録を修正" : "新しい支出"}</h3>
-              <label style={{ fontSize: "12px", color: "#999" }}>日付</label>
+              <h3 style={{ marginBottom: "20px" }}>{editId ? "記録を編集" : "新しく入力"}</h3>
               <input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
-              
-              <div style={{ marginTop: "15px" }}>
-                <label style={{ fontSize: "12px", color: "#999" }}>金額</label>
-                <input type="number" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} />
-              </div>
-
-              <div style={{ marginTop: "15px" }}>
-                <label style={{ fontSize: "12px", color: "#999" }}>メモ</label>
-                <input type="text" value={form.memo} onChange={e => setForm({...form, memo: e.target.value})} />
-              </div>
-
-              <button type="submit" style={{ width: "100%", marginTop: "20px", padding: "15px", background: "#1A1A1A", color: "#FFF", borderRadius: "10px" }} className="btn">{editId ? "更新する" : "追加する"}</button>
-              {editId && <button type="button" onClick={() => deleteEntry(editId)} style={{ width: "100%", marginTop: "10px", color: "#C05050", background: "none" }} className="btn">削除する</button>}
-              <button type="button" onClick={() => { setShowForm(false); setEditId(null); }} style={{ width: "100%", marginTop: "10px", color: "#999", background: "none" }} className="btn">キャンセル</button>
+              <input type="number" placeholder="金額" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} style={{marginTop: "15px"}} />
+              <input type="text" placeholder="メモ" value={form.memo} onChange={e => setForm({...form, memo: e.target.value})} style={{marginTop: "15px"}} />
+              <button type="submit" style={{ width: "100%", marginTop: "25px", padding: "16px", background: "#1A1A1A", color: "#FFF", borderRadius: "12px", fontSize: "16px", fontWeight: "bold" }} className="btn">保存する</button>
+              <button type="button" onClick={() => setShowForm(false)} style={{ width: "100%", marginTop: "10px", color: "#999", background: "none" }} className="btn">キャンセル</button>
             </form>
           </div>
         </div>
