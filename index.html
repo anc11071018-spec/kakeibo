@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>家計簿</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #F7F5F0; color: #1A1A1A; font-family: 'Hiragino Mincho ProN', 'Yu Mincho', Georgia, serif; }
+  input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+  input[type=date] { -webkit-appearance: none; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo, useEffect } = React;
+
+const CATEGORIES = [
+{ id: “food”,          label: “食費”,   icon: “🍱” },
+{ id: “transport”,     label: “交通費”, icon: “🚃” },
+{ id: “shopping”,      label: “買い物”, icon: “🛍” },
+{ id: “entertainment”, label: “娯楽”,   icon: “🎬” },
+{ id: “health”,        label: “医療”,   icon: “💊” },
+{ id: “utility”,       label: “光熱費”, icon: “💡” },
+{ id: “other”,         label: “その他”, icon: “📌” },
+];
+
+function yen(n) { return “¥” + Number(n).toLocaleString(“ja-JP”); }
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+function monthOf(d) { return d.slice(0, 7); }
+const WD = [“日”,“月”,“火”,“水”,“木”,“金”,“土”];
+
+const mono = { fontSize: 10, letterSpacing: 3, color: “#AAA”, textTransform: “uppercase”, fontFamily: “monospace” };
+const inputSt = {
+width: “100%”, background: “#FFF”, border: “1px solid #E8E4DC”,
+borderRadius: 8, padding: “12px 14px”, fontSize: 16, color: “#1A1A1A”,
+fontFamily: “inherit”, outline: “none”, boxSizing: “border-box”,
+};
+
+function BarChart({ expenses, budget }) {
+const today = new Date();
+const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+const mk = todayStr().slice(0, 7);
+const byDay = {};
+expenses.forEach(e => {
+if (monthOf(e.date) === mk) {
+const d = parseInt(e.date.slice(8), 10);
+byDay[d] = (byDay[d] || 0) + e.amount;
+}
+});
+const dailyBudget = budget / daysInMonth;
+const vals = Object.values(byDay);
+const max = Math.max(…vals, dailyBudget, 1);
+return (
+<div style={{ display: “flex”, alignItems: “flex-end”, gap: 3, height: 72 }}>
+{Array.from({ length: daysInMonth }, (_, i) => {
+const day = i + 1;
+const amt = byDay[day] || 0;
+const h = Math.max((amt / max) * 72, amt > 0 ? 3 : 0);
+return (
+<div key={day} style={{ flex: 1, display: “flex”, flexDirection: “column”, alignItems: “center”, justifyContent: “flex-end”, height: 72 }}>
+<div style={{
+width: “100%”, height: h, borderRadius: 2, transition: “height 0.4s ease”,
+background: amt > dailyBudget ? “#C05050” : day === today.getDate() ? “#555” : “#D4D0C8”,
+}} />
+</div>
+);
+})}
+</div>
+);
+}
+
+const SAMPLE = [
+{ id: 1, date: todayStr(), amount: 850,  category: “food”,          memo: “ランチ” },
+{ id: 2, date: todayStr(), amount: 210,  category: “transport”,     memo: “電車” },
+];
+
+function App() {
+const today = todayStr();
+
+const [expenses, setExpenses] = useState(() => {
+try { const s = localStorage.getItem(“kk_exp”); return s ? JSON.parse(s) : SAMPLE; } catch { return SAMPLE; }
+});
+const [budget, setBudget] = useState(() => {
+try { return Number(localStorage.getItem(“kk_budget”) || 100000); } catch { return 100000; }
+});
+const [budgetInput, setBudgetInput] = useState(String(budget));
+const [tab, setTab] = useState(“home”);
+const [showForm, setShowForm] = useState(false);
+const [form, setForm] = useState({ amount: “”, category: “food”, memo: “”, date: today });
+const [editId, setEditId] = useState(null);
+
+useEffect(() => { try { localStorage.setItem(“kk_exp”, JSON.stringify(expenses)); } catch {} }, [expenses]);
+useEffect(() => { try { localStorage.setItem(“kk_budget”, String(budget)); } catch {} }, [budget]);
+
+const thisMonth = useMemo(() => expenses.filter(e => monthOf(e.date) === today.slice(0,7)), [expenses]);
+const totalMonth = useMemo(() => thisMonth.reduce((s, e) => s + e.amount, 0), [thisMonth]);
+const remaining = budget - totalMonth;
+const pct = Math.min((totalMonth / budget) * 100, 100);
+
+const byCategory = useMemo(() => {
+const map = {};
+thisMonth.forEach(e => { map[e.category] = (map[e.category] || 0) + e.amount; });
+return map;
+}, [thisMonth]);
+
+const dailyMap = useMemo(() => {
+const map = {};
+expenses.forEach(e => { (map[e.date] = map[e.date] || []).push(e); });
+return map;
+}, [expenses]);
+
+const sortedDates = useMemo(() => Object.keys(dailyMap).sort((a,b) => b.localeCompare(a)), [dailyMap]);
+
+const cat = id => CATEGORIES.find(c => c.id === id) || CATEGORIES[CATEGORIES.length-1];
+
+function openAdd() { setForm({ amount:””, category:“food”, memo:””, date:today }); setEditId(null); setShowForm(true); }
+function openEdit(ex) { setForm({ amount:String(ex.amount), category:ex.category, memo:ex.memo, date:ex.date }); setEditId(ex.id); setShowForm(true); }
+function closeForm() { setShowForm(false); setEditId(null); }
+
+function submitForm(e) {
+e.preventDefault();
+const amt = Number(form.amount);
+if (!amt) return;
+if (editId !== null) {
+setExpenses(p => p.map(ex => ex.id === editId ? { …ex, amount:amt, category:form.category, memo:form.memo, date:form.date } : ex));
+} else {
+setExpenses(p => […p, { id: Date.now(), …form, amount:amt }]);
+}
+closeForm();
+}
+
+function saveBudget() { const n = Number(budgetInput); if (n > 0) setBudget(n); }
+
+return (
+<div style={{ minHeight:“100vh”, background:”#F7F5F0”, maxWidth:430, margin:“0 auto”, position:“relative” }}>
+
+```
+  {/* Header */}
+  <div style={{ padding:"36px 28px 24px", borderBottom:"1px solid #E8E4DC" }}>
+    <div style={mono}>家計簿</div>
+    <div style={{ marginTop:14, display:"flex", justifyContent:"space-between", alignItems:"flex-end" }}>
+      <div>
+        <div style={{ fontSize:38, fontWeight:400, letterSpacing:-1, lineHeight:1 }}>{yen(totalMonth)}</div>
+        <div style={{ marginTop:8, fontSize:12, color: remaining>=0 ? "#999" : "#C05050" }}>
+          {remaining>=0 ? `残り ${yen(remaining)}` : `${yen(-remaining)} 超過`}
+        </div>
+      </div>
+      <div style={{ textAlign:"right" }}>
+        <div style={mono}>予算</div>
+        <div style={{ fontSize:15, marginTop:4, color:"#666", fontFamily:"monospace" }}>{yen(budget)}</div>
+      </div>
+    </div>
+    <div style={{ marginTop:18, height:1.5, background:"#E8E4DC", borderRadius:99 }}>
+      <div style={{ height:"100%", width:`${pct}%`, background: pct>90?"#C05050":"#1A1A1A", borderRadius:99, transition:"width 0.5s ease" }} />
+    </div>
+  </div>
+
+  {/* Tabs */}
+  <div style={{ display:"flex", borderBottom:"1px solid #E8E4DC", position:"sticky", top:0, background:"#F7F5F0", zIndex:10 }}>
+    {[["home","記録"],["graph","グラフ"],["settings","設定"]].map(([id,label]) => (
+      <button key={id} onClick={() => setTab(id)} style={{
+        flex:1, padding:"14px 0", background:"none", border:"none",
+        borderBottom: tab===id ? "1.5px solid #1A1A1A" : "1.5px solid transparent",
+        color: tab===id ? "#1A1A1A" : "#BBB",
+        fontSize:11, letterSpacing:2, cursor:"pointer", fontFamily:"monospace",
+      }}>{label}</button>
+    ))}
+  </div>
+
+  {/* Content */}
+  <div style={{ paddingBottom:100 }}>
+
+    {tab === "home" && (
+      <div>
+        {sortedDates.map(date => {
+          const dayTotal = dailyMap[date].reduce((s,e) => s+e.amount, 0);
+          const d = new Date(date+"T00:00:00");
+          return (
+            <div key={date}>
+              <div style={{ padding:"14px 28px 4px", display:"flex", justifyContent:"space-between", position:"sticky", top:45, background:"#F7F5F0", zIndex:5 }}>
+                <div style={{ ...mono, color: date===today?"#555":"#CCC" }}>
+                  {date===today?"今日  ":""}{date.slice(5).replace("-","/")} {WD[d.getDay()]}
+                </div>
+                <div style={mono}>{yen(dayTotal)}</div>
+              </div>
+              {dailyMap[date].map(ex => (
+                <div key={ex.id} style={{ margin:"0 20px", padding:"14px 8px", display:"flex", alignItems:"center", gap:14, borderBottom:"1px solid #F0EDE6" }}>
+                  <span style={{ fontSize:20, flexShrink:0 }}>{cat(ex.category).icon}</span>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:14 }}>{ex.memo || cat(ex.category).label}</div>
+                    <div style={{ fontSize:11, color:"#BBB", marginTop:2, fontFamily:"monospace" }}>{cat(ex.category).label}</div>
+                  </div>
+                  <div style={{ fontSize:15, fontFamily:"monospace", flexShrink:0 }}>{yen(ex.amount)}</div>
+                  <button onClick={() => openEdit(ex)} style={{ background:"none", border:"none", color:"#CCC", fontSize:15, cursor:"pointer", padding:"2px 6px" }}>✎</button>
+                  <button onClick={() => setExpenses(p => p.filter(e => e.id!==ex.id))} style={{ background:"none", border:"none", color:"#DDD", fontSize:16, cursor:"pointer", padding:"2px 6px" }}>×</button>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+        {sortedDates.length===0 && (
+          <div style={{ padding:60, textAlign:"center", color:"#CCC", fontSize:12, fontFamily:"monospace" }}>記録がありません</div>
+        )}
+      </div>
+    )}
+
+    {tab === "graph" && (
+      <div style={{ padding:"28px" }}>
+        <div style={mono}>今月の日別支出</div>
+        <div style={{ marginTop:14 }}><BarChart expenses={expenses} budget={budget} /></div>
+        <div style={{ marginTop:8, display:"flex", gap:20 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <div style={{ width:10, height:3, background:"#C05050", borderRadius:99 }} />
+            <span style={mono}>予算超過</span>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <div style={{ width:10, height:3, background:"#555", borderRadius:99 }} />
+            <span style={mono}>今日</span>
+          </div>
+        </div>
+
+        <div style={{ marginTop:40 }}>
+          <div style={mono}>カテゴリ別</div>
+          <div style={{ marginTop:16, display:"flex", flexDirection:"column", gap:16 }}>
+            {CATEGORIES.filter(c => byCategory[c.id]).map(c => {
+              const amt = byCategory[c.id] || 0;
+              const p = totalMonth ? (amt/totalMonth*100) : 0;
+              return (
+                <div key={c.id}>
+                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:7 }}>
+                    <div style={{ fontSize:13, display:"flex", gap:8, alignItems:"center" }}>
+                      <span>{c.icon}</span><span>{c.label}</span>
+                    </div>
+                    <div style={{ fontSize:13, fontFamily:"monospace" }}>
+                      {yen(amt)} <span style={{ color:"#CCC", fontSize:11 }}>{p.toFixed(0)}%</span>
+                    </div>
+                  </div>
+                  <div style={{ height:1.5, background:"#E8E4DC", borderRadius:99 }}>
+                    <div style={{ height:"100%", width:`${p}%`, background:"#1A1A1A", borderRadius:99, transition:"width 0.5s ease" }} />
+                  </div>
+                </div>
+              );
+            })}
+            {!Object.keys(byCategory).length && (
+              <div style={{ color:"#CCC", fontSize:12, fontFamily:"monospace" }}>今月の記録がありません</div>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+
+    {tab === "settings" && (
+      <div style={{ padding:"28px" }}>
+        <div style={mono}>月間予算</div>
+        <div style={{ marginTop:12, display:"flex", gap:10 }}>
+          <input type="number" value={budgetInput} onChange={e => setBudgetInput(e.target.value)}
+            style={{ ...inputSt, fontSize:20, fontFamily:"monospace", flex:1 }} />
+          <button onClick={saveBudget} style={{
+            background:"#1A1A1A", color:"#F7F5F0", border:"none", borderRadius:8,
+            padding:"12px 20px", fontSize:12, fontFamily:"monospace", cursor:"pointer", letterSpacing:1, flexShrink:0,
+          }}>保存</button>
+        </div>
+        <div style={{ marginTop:8, ...mono }}>現在: {yen(budget)} / 月</div>
+
+        <div style={{ marginTop:44, paddingTop:32, borderTop:"1px solid #E8E4DC" }}>
+          <div style={mono}>データ管理</div>
+          <button onClick={() => { if(window.confirm("すべての記録を削除しますか？")) setExpenses([]); }} style={{
+            marginTop:12, background:"none", border:"1px solid #E8E4DC", borderRadius:8,
+            padding:"10px 18px", fontSize:11, fontFamily:"monospace", color:"#C05050", cursor:"pointer", letterSpacing:1,
+          }}>すべて削除</button>
+        </div>
+      </div>
+    )}
+  </div>
+
+  {/* FAB */}
+  <button onClick={openAdd} style={{
+    position:"fixed", bottom:32, right:"calc(50% - 215px + 24px)",
+    width:50, height:50, borderRadius:25,
+    background:"#1A1A1A", color:"#F7F5F0", border:"none", fontSize:24, cursor:"pointer",
+    boxShadow:"0 4px 24px rgba(0,0,0,0.18)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:50,
+  }}>+</button>
+
+  {/* Form Modal */}
+  {showForm && (
+    <div onClick={e => { if(e.target===e.currentTarget) closeForm(); }} style={{
+      position:"fixed", inset:0, background:"rgba(0,0,0,0.25)",
+      display:"flex", alignItems:"flex-end", zIndex:100,
+    }}>
+      <div style={{
+        background:"#F7F5F0", borderRadius:"20px 20px 0 0",
+        width:"100%", maxWidth:430, margin:"0 auto",
+        padding:"28px 24px 48px", borderTop:"1px solid #E8E4DC",
+      }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:28 }}>
+          <div style={{ fontSize:15, letterSpacing:1 }}>{editId!==null?"編集":"支出を追加"}</div>
+          <button onClick={closeForm} style={{ background:"none", border:"none", fontSize:22, color:"#CCC", cursor:"pointer" }}>×</button>
+        </div>
+
+        <form onSubmit={submitForm}>
+          <div style={{ marginBottom:20 }}>
+            <div style={{ ...mono, marginBottom:8 }}>金額 (円)</div>
+            <input autoFocus type="number" value={form.amount}
+              onChange={e => setForm(f => ({ ...f, amount:e.target.value }))}
+              placeholder="0" style={{ ...inputSt, fontSize:22, fontFamily:"monospace" }} />
+          </div>
+
+          <div style={{ marginBottom:20 }}>
+            <div style={{ ...mono, marginBottom:8 }}>カテゴリ</div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+              {CATEGORIES.map(c => (
+                <button key={c.id} type="button" onClick={() => setForm(f => ({ ...f, category:c.id }))} style={{
+                  background: form.category===c.id ? "#1A1A1A" : "#FFF",
+                  color: form.category===c.id ? "#F7F5F0" : "#666",
+                  border:"1px solid #E8E4DC", borderRadius:20,
+                  padding:"6px 14px", fontSize:12, cursor:"pointer", fontFamily:"inherit",
+                }}>{c.icon} {c.label}</button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ marginBottom:20 }}>
+            <div style={{ ...mono, marginBottom:8 }}>日付</div>
+            <input type="date" value={form.date}
+              onChange={e => setForm(f => ({ ...f, date:e.target.value }))}
+              style={inputSt} />
+          </div>
+
+          <div style={{ marginBottom:28 }}>
+            <div style={{ ...mono, marginBottom:8 }}>メモ</div>
+            <input type="text" value={form.memo}
+              onChange={e => setForm(f => ({ ...f, memo:e.target.value }))}
+              placeholder="例：ランチ、コンビニ…" style={inputSt} />
+          </div>
+
+          <button type="submit" style={{
+            width:"100%", background:"#1A1A1A", color:"#F7F5F0",
+            border:"none", borderRadius:10, padding:"15px",
+            fontSize:13, letterSpacing:2, cursor:"pointer", fontFamily:"monospace",
+          }}>{editId!==null?"保存":"追加"}</button>
+        </form>
+      </div>
+    </div>
+  )}
+</div>
+```
+
+);
+}
+
+ReactDOM.createRoot(document.getElementById(“root”)).render(<App />);
+</script>
+
+</body>
+</html>
