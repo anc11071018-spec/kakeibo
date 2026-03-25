@@ -33,14 +33,14 @@ function todayStr() { return new Date().toISOString().slice(0, 10); }
 
 function App() {
   const [expenses, setExpenses] = useState(() => {
-    const s = localStorage.getItem("kk_exp_final");
+    const s = localStorage.getItem("kk_exp_v4");
     return s ? JSON.parse(s) : [];
   });
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ amount: "", category: "food", memo: "", date: todayStr() });
   const [editId, setEditId] = useState(null);
 
-  useEffect(() => { localStorage.setItem("kk_exp_final", JSON.stringify(expenses)); }, [expenses]);
+  useEffect(() => { localStorage.setItem("kk_exp_v4", JSON.stringify(expenses)); }, [expenses]);
 
   const dailyMap = useMemo(() => {
     const map = {};
@@ -50,7 +50,7 @@ function App() {
 
   const sortedDates = useMemo(() => Object.keys(dailyMap).sort((a,b) => b.localeCompare(a)), [dailyMap]);
 
-  // iPhoneでカレンダーアプリを直接起動させるためのリンク生成
+  // iPhoneカレンダー連携の修正（タイトルから文字を削除）
   const exportToCalendar = (date, total) => {
     const cleanDate = date.replace(/-/g, "");
     const ics = [
@@ -59,15 +59,15 @@ function App() {
       "BEGIN:VEVENT",
       `DTSTART;VALUE=DATE:${cleanDate}`,
       `DTEND;VALUE=DATE:${cleanDate}`,
-      `SUMMARY:支出合計: ${yen(total)}`,
+      `SUMMARY:${yen(total)}`, // ここを金額のみに修正
       "DESCRIPTION:家計簿アプリより同期",
       "END:VEVENT",
       "END:VCALENDAR"
     ].join("\n");
     
-    // データスキームを text/calendar に固定し、iPhoneにカレンダーデータだと認識させる
-    const url = "data:text/calendar;charset=utf8," + encodeURIComponent(ics);
-    window.location.assign(url);
+    // iPhoneのSafariで直接「イベント追加」を開かせるための設定
+    const uri = "data:text/calendar;charset=utf8," + encodeURIComponent(ics);
+    window.location.href = uri;
   };
 
   const submitForm = (e) => {
@@ -121,11 +121,12 @@ function App() {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "flex-end", zIndex: 100 }}>
           <div style={{ background: "#FFF", width: "100%", padding: "30px", borderRadius: "20px 20px 0 0" }}>
             <form onSubmit={submitForm}>
-              <h3 style={{ marginBottom: "20px" }}>{editId ? "記録を編集" : "新しく入力"}</h3>
+              <h3 style={{ marginBottom: "20px" }}>入力・編集</h3>
               <input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
               <input type="number" placeholder="金額" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} style={{marginTop: "15px"}} />
               <input type="text" placeholder="メモ" value={form.memo} onChange={e => setForm({...form, memo: e.target.value})} style={{marginTop: "15px"}} />
               <button type="submit" style={{ width: "100%", marginTop: "25px", padding: "16px", background: "#1A1A1A", color: "#FFF", borderRadius: "12px", fontSize: "16px", fontWeight: "bold" }} className="btn">保存する</button>
+              {editId && <button type="button" onClick={() => { if(confirm("消去しますか？")){ setExpenses(p => p.filter(ex => ex.id !== editId)); setShowForm(false); } }} style={{ width: "100%", marginTop: "10px", color: "#C05050", background: "none" }} className="btn">削除する</button>}
               <button type="button" onClick={() => setShowForm(false)} style={{ width: "100%", marginTop: "10px", color: "#999", background: "none" }} className="btn">キャンセル</button>
             </form>
           </div>
