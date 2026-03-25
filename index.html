@@ -10,6 +10,7 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #F7F5F0; color: #1A1A1A; font-family: 'Hiragino Mincho ProN', 'Yu Mincho', Georgia, serif; }
+  input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 </style>
 </head>
 <body>
@@ -29,14 +30,198 @@ const CATEGORIES = [
 
 function yen(n) { return "¥" + Number(n).toLocaleString("ja-JP"); }
 function todayStr() { return new Date().toISOString().slice(0, 10); }
+function monthOf(d) { return d.slice(0, 7); }
+const WD = ["日","月","火","水","木","金","土"];
+
+const mono = { fontSize: 10, letterSpacing: 3, color: "#AAA", textTransform: "uppercase", fontFamily: "monospace" };
+const inputSt = {
+  width: "100%", background: "#FFF", border: "1px solid #E8E4DC",
+  borderRadius: 8, padding: "12px 14px", fontSize: 16, color: "#1A1A1A",
+  fontFamily: "inherit", outline: "none", boxSizing: "border-box",
+};
+
+function BarChart({ expenses, budget }) {
+  const today = new Date();
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const mk = todayStr().slice(0, 7);
+  const byDay = {};
+  expenses.forEach(e => {
+    if (monthOf(e.date) === mk) {
+      const d = parseInt(e.date.slice(8), 10);
+      byDay[d] = (byDay[d] || 0) + e.amount;
+    }
+  });
+  const dailyBudget = budget / daysInMonth;
+  const vals = Object.values(byDay);
+  const max = Math.max(...vals, dailyBudget, 1);
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 72 }}>
+      {Array.from({ length: daysInMonth }, (_, i) => {
+        const day = i + 1;
+        const amt = byDay[day] || 0;
+        const h = Math.max((amt / max) * 72, amt > 0 ? 3 : 0);
+        return (
+          <div key={day} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: 72 }}>
+            <div style={{
+              width: "100%", height: h, borderRadius: 2, transition: "height 0.4s ease",
+              background: amt > dailyBudget ? "#C05050" : day === today.getDate() ? "#555" : "#D4D0C8",
+            }} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function App() {
-  const [expenses, setExpenses] = useState([]);
+  const today = todayStr();
+  const [expenses, setExpenses] = useState(() => {
+    const s = localStorage.getItem("kk_exp");
+    return s ? JSON.parse(s) : [];
+  });
+  const [budget, setBudget] = useState(() => Number(localStorage.getItem("kk_budget") || 100000));
+  const [budgetInput, setBudgetInput] = useState(String(budget));
+  const [tab, setTab] = useState("home");
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ amount: "", category: "food", memo: "", date: today });
+  const [editId, setEditId] = useState(null);
+
+  useEffect(() => { localStorage.setItem("kk_exp", JSON.stringify(expenses)); }, [expenses]);
+  useEffect(() => { localStorage.setItem("kk_budget", String(budget)); }, [budget]);
+
+  const thisMonth = useMemo(() => expenses.filter(e => monthOf(e.date) === today.slice(0,7)), [expenses, today]);
+  const totalMonth = useMemo(() => thisMonth.reduce((s, e) => s + e.amount, 0), [thisMonth]);
+  const remaining = budget - totalMonth;
+  const pct = Math.min((totalMonth / budget) * 100, 100);
+
+  const byCategory = useMemo(() => {
+    const map = {};
+    thisMonth.forEach(e => { map[e.category] = (map[e.category] || 0) + e.amount; });
+    return map;
+  }, [thisMonth]);
+
+  const dailyMap = useMemo(() => {
+    const map = {};
+    expenses.forEach(e => { (map[e.date] = map[e.date] || []).push(e); });
+    return map;
+  }, [expenses]);
+
+  const sortedDates = useMemo(() => Object.keys(dailyMap).sort((a,b) => b.localeCompare(a)), [dailyMap]);
+  const cat = id => CATEGORIES.find(c => c.id === id) || CATEGORIES[CATEGORIES.length-1];
+
+  function openAdd() { setForm({ amount:"", category:"food", memo:"", date:today }); setEditId(null); setShowForm(true); }
+  function openEdit(ex) { setForm({ amount:String(ex.amount), category:ex.category, memo:ex.memo, date:ex.date }); setEditId(ex.id); setShowForm(true); }
+
+  function submitForm(e) {
+    e.preventDefault();
+    const amt = Number(form.amount);
+    if (!amt) return;
+    if (editId !== null) {
+      setExpenses(p => p.map(ex => ex.id === editId ? { ...ex, amount:amt, category:form.category, memo:form.memo, date:form.date } : ex));
+    } else {
+      setExpenses(p => [{ id: Date.now(), ...form, amount:amt }, ...p]);
+    }
+    setShowForm(false);
+  }
+
   return (
-    <div style={{ padding: "40px", textAlign: "center" }}>
-      <h1>家計簿アプリ</h1>
-      <p style={{ marginTop: "20px" }}>正常に動作しています！</p>
-      <button onClick={() => alert("ボタンも動きます！")} style={{ marginTop: "20px", padding: "10px 20px", background: "#1A1A1A", color: "#FFF", border: "none", borderRadius: "8px" }}>テストボタン</button>
+    <div style={{ minHeight:"100vh", background:"#F7F5F0", maxWidth:430, margin:"0 auto", position:"relative" }}>
+      {/* Header */}
+      <div style={{ padding:"36px 28px 24px", borderBottom:"1px solid #E8E4DC" }}>
+        <div style={mono}>家計簿</div>
+        <div style={{ marginTop:14, display:"flex", justifyContent:"space-between", alignItems:"flex-end" }}>
+          <div>
+            <div style={{ fontSize:38, fontWeight:400, letterSpacing:-1, lineHeight:1 }}>{yen(totalMonth)}</div>
+            <div style={{ marginTop:8, fontSize:12, color: remaining>=0 ? "#999" : "#C05050" }}>
+              {remaining>=0 ? `残り ${yen(remaining)}` : `${yen(-remaining)} 超過`}
+            </div>
+          </div>
+          <div style={{ textAlign:"right" }}>
+            <div style={mono}>予算</div>
+            <div style={{ fontSize:15, marginTop:4, color:"#666", fontFamily:"monospace" }}>{yen(budget)}</div>
+          </div>
+        </div>
+        <div style={{ marginTop:18, height:1.5, background:"#E8E4DC", borderRadius:99 }}>
+          <div style={{ height:"100%", width:`${pct}%`, background: pct>90?"#C05050":"#1A1A1A", borderRadius:99, transition:"width 0.5s ease" }} />
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display:"flex", borderBottom:"1px solid #E8E4DC", position:"sticky", top:0, background:"#F7F5F0", zIndex:10 }}>
+        {[["home","記録"],["graph","グラフ"],["settings","設定"]].map(([id,label]) => (
+          <button key={id} onClick={() => setTab(id)} style={{
+            flex:1, padding:"14px 0", background:"none", border:"none",
+            borderBottom: tab===id ? "1.5px solid #1A1A1A" : "1.5px solid transparent",
+            color: tab===id ? "#1A1A1A" : "#BBB",
+            fontSize:11, letterSpacing:2, cursor:"pointer", fontFamily:"monospace",
+          }}>{label}</button>
+        ))}
+      </div>
+
+      <div style={{ paddingBottom:100 }}>
+        {tab === "home" && (
+          <div>
+            {sortedDates.map(date => {
+              const dayTotal = dailyMap[date].reduce((s,e) => s+e.amount, 0);
+              const d = new Date(date+"T00:00:00");
+              return (
+                <div key={date}>
+                  <div style={{ padding:"14px 28px 4px", display:"flex", justifyContent:"space-between", position:"sticky", top:45, background:"#F7F5F0", zIndex:5 }}>
+                    <div style={{ ...mono, color: date===today?"#555":"#CCC" }}>
+                      {date===today?"今日  ":""}{date.slice(5).replace("-","/")} {WD[d.getDay()]}
+                    </div>
+                    <div style={mono}>{yen(dayTotal)}</div>
+                  </div>
+                  {dailyMap[date].map(ex => (
+                    <div key={ex.id} style={{ margin:"0 20px", padding:"14px 8px", display:"flex", alignItems:"center", gap:14, borderBottom:"1px solid #F0EDE6" }}>
+                      <span style={{ fontSize:20 }}>{cat(ex.category).icon}</span>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontSize:14 }}>{ex.memo || cat(ex.category).label}</div>
+                      </div>
+                      <div style={{ fontSize:15, fontFamily:"monospace" }}>{yen(ex.amount)}</div>
+                      <button onClick={() => openEdit(ex)} style={{ background:"none", border:"none", color:"#CCC" }}>✎</button>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        
+        {tab === "graph" && (
+          <div style={{ padding:"28px" }}>
+            <div style={mono}>日別支出</div>
+            <div style={{ marginTop:14 }}><BarChart expenses={expenses} budget={budget} /></div>
+          </div>
+        )}
+
+        {tab === "settings" && (
+          <div style={{ padding:"28px" }}>
+            <div style={mono}>月間予算設定</div>
+            <input type="number" value={budgetInput} onChange={e => { setBudgetInput(e.target.value); setBudget(Number(e.target.value)); }} style={{...inputSt, marginTop:10}} />
+          </div>
+        )}
+      </div>
+
+      <button onClick={openAdd} style={{
+        position:"fixed", bottom:32, right:24, width:56, height:56, borderRadius:28,
+        background:"#1A1A1A", color:"#F7F5F0", border:"none", fontSize:24, boxShadow:"0 4px 12px rgba(0,0,0,0.2)"
+      }}>+</button>
+
+      {showForm && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", zIndex:100 }}>
+          <div style={{ background:"#F7F5F0", width:"100%", padding:"28px", borderRadius:"20px 20px 0 0" }}>
+            <form onSubmit={submitForm}>
+              <div style={mono}>金額</div>
+              <input autoFocus type="number" value={form.amount} onChange={e => setForm({...form, amount:e.target.value})} style={inputSt} />
+              <div style={{...mono, marginTop:20}}>メモ</div>
+              <input type="text" value={form.memo} onChange={e => setForm({...form, memo:e.target.value})} style={inputSt} />
+              <button type="submit" style={{ width:"100%", marginTop:20, padding:15, background:"#1A1A1A", color:"#FFF", borderRadius:10, border:"none" }}>保存</button>
+              <button type="button" onClick={() => setShowForm(false)} style={{ width:"100%", marginTop:10, background:"none", border:"none", color:"#999" }}>キャンセル</button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
