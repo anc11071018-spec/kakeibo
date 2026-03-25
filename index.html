@@ -2,17 +2,18 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>家計簿 Pro</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #F7F5F0; color: #1A1A1A; font-family: 'Hiragino Mincho ProN', 'Yu Mincho', Georgia, serif; -webkit-tap-highlight-color: transparent; }
-  input { -webkit-appearance: none; border-radius: 8px; }
+  body { background: #F7F5F0; color: #1A1A1A; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-tap-highlight-color: transparent; }
+  input { -webkit-appearance: none; border-radius: 8px; border: 1px solid #E8E4DC; padding: 12px; font-size: 16px; width: 100%; margin-top: 8px; }
   .btn { cursor: pointer; transition: opacity 0.2s; border: none; }
-  .btn:active { opacity: 0.6; }
+  .btn:active { opacity: 0.5; }
+  .list-item { padding: 12px 20px; border-bottom: 1px solid #F5F5F5; display: flex; justify-content: space-between; align-items: center; background: #FFF; }
 </style>
 </head>
 <body>
@@ -30,11 +31,6 @@ const CATEGORIES = [
 function yen(n) { return "¥" + Number(n).toLocaleString("ja-JP"); }
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 
-const inputSt = {
-  width: "100%", background: "#FFF", border: "1px solid #E8E4DC",
-  padding: "12px", fontSize: "16px", outline: "none", marginTop: "8px"
-};
-
 function App() {
   const [expenses, setExpenses] = useState(() => {
     const s = localStorage.getItem("kk_exp_v2");
@@ -42,6 +38,7 @@ function App() {
   });
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ amount: "", category: "food", memo: "", date: todayStr() });
+  const [editId, setEditId] = useState(null);
 
   useEffect(() => { localStorage.setItem("kk_exp_v2", JSON.stringify(expenses)); }, [expenses]);
 
@@ -53,82 +50,106 @@ function App() {
 
   const sortedDates = useMemo(() => Object.keys(dailyMap).sort((a,b) => b.localeCompare(a)), [dailyMap]);
 
-  // カレンダー形式(.ics)で書き出す機能
+  // カレンダー連携：Data URL方式（iPhoneのSafariで開きやすい形式）
   const exportToCalendar = (date, total) => {
     const cleanDate = date.replace(/-/g, "");
-    const icsContent = [
+    const ics = [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
       "BEGIN:VEVENT",
       `DTSTART;VALUE=DATE:${cleanDate}`,
       `SUMMARY:支出合計: ${yen(total)}`,
-      "DESCRIPTION:家計簿アプリからの出力",
+      "DESCRIPTION:家計簿から同期",
       "END:VEVENT",
       "END:VCALENDAR"
-    ].join("\r\n");
+    ].join("\n");
     
-    const blob = new Blob([icsContent], { type: "text/calendar;charset=utf-8" });
-    const link = document.createElement("a");
-    link.href = window.URL.createObjectURL(blob);
-    link.download = `kakeibo-${date}.ics`;
-    link.click();
+    const uri = "data:text/calendar;charset=utf8," + encodeURIComponent(ics);
+    window.location.href = uri;
+  };
+
+  const openEdit = (ex) => {
+    setForm({ amount: String(ex.amount), category: ex.category, memo: ex.memo, date: ex.date });
+    setEditId(ex.id);
+    setShowForm(true);
   };
 
   const submitForm = (e) => {
     e.preventDefault();
     if (!form.amount) return;
-    setExpenses(p => [{ id: Date.now(), ...form, amount: Number(form.amount) }, ...p]);
+    const newEntry = { id: editId || Date.now(), ...form, amount: Number(form.amount) };
+    
+    if (editId) {
+      setExpenses(p => p.map(ex => ex.id === editId ? newEntry : ex));
+    } else {
+      setExpenses(p => [newEntry, ...p]);
+    }
     setShowForm(false);
+    setEditId(null);
+  };
+
+  const deleteEntry = (id) => {
+    if(confirm("この記録を削除しますか？")) {
+      setExpenses(p => p.filter(ex => ex.id !== id));
+      setShowForm(false);
+    }
   };
 
   return (
     <div style={{ maxWidth: 430, margin: "0 auto", paddingBottom: 100 }}>
-      <header style={{ padding: "30px 20px", borderBottom: "1px solid #EEE" }}>
-        <h1 style={{ fontSize: "24px", fontWeight: "normal" }}>支出ログ</h1>
+      <header style={{ padding: "30px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h1 style={{ fontSize: "22px" }}>家計簿ログ</h1>
+        <button onClick={() => { setEditId(null); setForm({ amount: "", category: "food", memo: "", date: todayStr() }); setShowForm(true); }} className="btn" style={{ background: "#1A1A1A", color: "#FFF", width: 40, height: 40, borderRadius: "50%", fontSize: "24px" }}>+</button>
       </header>
 
       {sortedDates.map(date => {
         const total = dailyMap[date].reduce((s,e) => s + e.amount, 0);
         return (
-          <div key={date} style={{ marginBottom: 15 }}>
-            <div style={{ padding: "10px 20px", background: "#F0F0F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "12px", color: "#666" }}>{date}</span>
+          <div key={date} style={{ marginBottom: 10 }}>
+            <div style={{ padding: "8px 20px", background: "#F0EDE6", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "13px" }}>
+              <span>{date}</span>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <b style={{ fontSize: "14px" }}>{yen(total)}</b>
-                <button onClick={() => exportToCalendar(date, total)} className="btn" style={{ fontSize: "10px", background: "#1A1A1A", color: "#FFF", padding: "4px 8px", borderRadius: "4px" }}>📅 連携</button>
+                <b>{yen(total)}</b>
+                <button onClick={() => exportToCalendar(date, total)} className="btn" style={{ background: "#FFF", border: "1px solid #CCC", padding: "2px 8px", borderRadius: "4px", fontSize: "11px" }}>カレンダーに追加</button>
               </div>
             </div>
             {dailyMap[date].map(ex => (
-              <div key={ex.id} style={{ padding: "12px 20px", borderBottom: "1px solid #F5F5F5", display: "flex", justifyContent: "space-between" }}>
-                <span>{CATEGORIES.find(c => c.id === ex.category)?.icon} {ex.memo || "無題"}</span>
-                <span>{yen(ex.amount)}</span>
+              <div key={ex.id} onClick={() => openEdit(ex)} className="list-item">
+                <div style={{ display: "flex", gap: "12px" }}>
+                  <span>{CATEGORIES.find(c => c.id === ex.category)?.icon}</span>
+                  <div>
+                    <div style={{ fontSize: "14px" }}>{ex.memo || "無題"}</div>
+                    <div style={{ fontSize: "11px", color: "#AAA" }}>タップで編集</div>
+                  </div>
+                </div>
+                <span style={{ fontWeight: "500" }}>{yen(ex.amount)}</span>
               </div>
             ))}
           </div>
         );
       })}
 
-      <button onClick={() => setShowForm(true)} style={{ position: "fixed", bottom: 30, right: 20, width: 60, height: 60, borderRadius: "50%", background: "#1A1A1A", color: "#FFF", fontSize: "30px", boxShadow: "0 4px 10px rgba(0,0,0,0.3)" }} className="btn">+</button>
-
       {showForm && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "flex-end", zIndex: 100 }}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "flex-end", zIndex: 100 }}>
           <div style={{ background: "#FFF", width: "100%", padding: "25px", borderRadius: "20px 20px 0 0" }}>
             <form onSubmit={submitForm}>
-              <label style={{ fontSize: "12px", color: "#999" }}>日付選択</label>
-              <input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} style={inputSt} />
+              <h3 style={{ marginBottom: "15px", fontSize: "16px" }}>{editId ? "記録を修正" : "新しい支出"}</h3>
+              <label style={{ fontSize: "12px", color: "#999" }}>日付</label>
+              <input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
               
               <div style={{ marginTop: "15px" }}>
                 <label style={{ fontSize: "12px", color: "#999" }}>金額</label>
-                <input type="number" placeholder="0" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} style={inputSt} />
+                <input type="number" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} />
               </div>
 
               <div style={{ marginTop: "15px" }}>
                 <label style={{ fontSize: "12px", color: "#999" }}>メモ</label>
-                <input type="text" placeholder="品名など" value={form.memo} onChange={e => setForm({...form, memo: e.target.value})} style={inputSt} />
+                <input type="text" value={form.memo} onChange={e => setForm({...form, memo: e.target.value})} />
               </div>
 
-              <button type="submit" style={{ width: "100%", marginTop: "20px", padding: "15px", background: "#1A1A1A", color: "#FFF", borderRadius: "10px", fontSize: "16px" }} className="btn">追加する</button>
-              <button type="button" onClick={() => setShowForm(false)} style={{ width: "100%", marginTop: "10px", padding: "10px", background: "none", color: "#999" }} className="btn">キャンセル</button>
+              <button type="submit" style={{ width: "100%", marginTop: "20px", padding: "15px", background: "#1A1A1A", color: "#FFF", borderRadius: "10px" }} className="btn">{editId ? "更新する" : "追加する"}</button>
+              {editId && <button type="button" onClick={() => deleteEntry(editId)} style={{ width: "100%", marginTop: "10px", color: "#C05050", background: "none" }} className="btn">削除する</button>}
+              <button type="button" onClick={() => { setShowForm(false); setEditId(null); }} style={{ width: "100%", marginTop: "10px", color: "#999", background: "none" }} className="btn">キャンセル</button>
             </form>
           </div>
         </div>
